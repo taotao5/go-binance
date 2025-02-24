@@ -3,8 +3,6 @@ package binance
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,7 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
+
+	"crypto/tls"
 
 	"github.com/bitly/go-simplejson"
 	"github.com/taotao5/go-binance/v2/common"
@@ -173,7 +174,7 @@ func getAPIEndpoint() string {
 // NewClient initialize an API client instance with API key and secret key.
 // You should always call this function before using this SDK.
 // Services will be created by the form client.NewXXXService().
-func NewClient(apiKey, secretKey string, ProxyURL string, timeout time.Duration) *Client {
+func NewClient(apiKey, secretKey string, proxyUrl string, timeout time.Duration) *Client {
 	// 创建一个带有超时和连接池配置的自定义 HTTP 客户端
 	transport := &http.Transport{
 		TLSHandshakeTimeout: 10 * time.Second,
@@ -183,12 +184,13 @@ func NewClient(apiKey, secretKey string, ProxyURL string, timeout time.Duration)
 	}
 
 	// 如果提供了代理 URL，设置代理
-	if ProxyURL != "" {
-		proxyURL, err := url.Parse(ProxyURL)
+	if proxyUrl != "" {
+		proxyURL, err := url.Parse(proxyUrl)
 		if err != nil {
 			log.Fatalf("解析代理 URL 时出错: %v", err)
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	client := &http.Client{
@@ -199,6 +201,7 @@ func NewClient(apiKey, secretKey string, ProxyURL string, timeout time.Duration)
 	return &Client{
 		APIKey:     apiKey,
 		SecretKey:  secretKey,
+		KeyType:    common.KeyTypeEd25519,
 		BaseURL:    getAPIEndpoint(),
 		UserAgent:  "Binance/golang",
 		HTTPClient: client,
@@ -222,6 +225,7 @@ type doFunc func(req *http.Request) (*http.Response, error)
 type Client struct {
 	APIKey     string
 	SecretKey  string
+	KeyType    string
 	BaseURL    string
 	UserAgent  string
 	HTTPClient *http.Client
@@ -256,8 +260,12 @@ func (c *Client) parseRequest(r *request, opts ...RequestOption) (err error) {
 		r.setParam(timestampKey, currentTimestamp()-c.TimeOffset)
 	}
 	queryString := r.query.Encode()
+	// @ is a safe character and does not require escape, So replace it back.
+	queryString = strings.ReplaceAll(queryString, "%40", "@")
 	body := &bytes.Buffer{}
 	bodyString := r.form.Encode()
+	// @ is a safe character and does not require escape, So replace it back.
+	bodyString = strings.ReplaceAll(bodyString, "%40", "@")
 	header := http.Header{}
 	if r.header != nil {
 		header = r.header.Clone()
@@ -270,16 +278,24 @@ func (c *Client) parseRequest(r *request, opts ...RequestOption) (err error) {
 		header.Set("X-MBX-APIKEY", c.APIKey)
 	}
 
+	kt := c.KeyType
+	if kt == "" {
+		kt = common.KeyTypeHmac
+	}
+
+	sf, err := common.SignFunc(kt)
+	if err != nil {
+		return err
+	}
+
 	if r.secType == secTypeSigned {
-		decodedValuebodyString, _ := url.QueryUnescape(bodyString)
-		raw := fmt.Sprintf("%s%s", queryString, decodedValuebodyString)
-		mac := hmac.New(sha256.New, []byte(c.SecretKey))
-		_, err = mac.Write([]byte(raw))
+		raw := fmt.Sprintf("%s%s", queryString, bodyString)
+		sign, err := sf(c.SecretKey, raw)
 		if err != nil {
 			return err
 		}
 		v := url.Values{}
-		v.Set(signatureKey, fmt.Sprintf("%x", (mac.Sum(nil))))
+		v.Set(signatureKey, *sign)
 		if queryString == "" {
 			queryString = v.Encode()
 		} else {
@@ -469,12 +485,12 @@ func (c *Client) NewCreateWithdrawService() *CreateWithdrawService {
 	return &CreateWithdrawService{c: c}
 }
 
-// NewListVipLoanOrdersService init 
+// NewListVipLoanOrdersService init
 func (c *Client) NewListVipLoanOrdersService() *ListVipLoanOrdersService {
 	return &ListVipLoanOrdersService{c: c}
 }
 
-// NewCreateVipLoanRepayService init 
+// NewCreateVipLoanRepayService init
 func (c *Client) NewCreateVipLoanRepayService() *CreateVipLoanRepayService {
 	return &CreateVipLoanRepayService{c: c}
 }
