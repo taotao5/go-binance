@@ -469,6 +469,16 @@ func (c *Client) NewCreateWithdrawService() *CreateWithdrawService {
 	return &CreateWithdrawService{c: c}
 }
 
+// NewListVipLoanOrdersService init 
+func (c *Client) NewListVipLoanOrdersService() *ListVipLoanOrdersService {
+	return &ListVipLoanOrdersService{c: c}
+}
+
+// NewCreateVipLoanRepayService init 
+func (c *Client) NewCreateVipLoanRepayService() *CreateVipLoanRepayService {
+	return &CreateVipLoanRepayService{c: c}
+}
+
 // NewCreateWithdrawService init creating withdraw service
 func (c *Client) NewQueryAllCoinService() *CreateQueryAllCoinService {
 	return &CreateQueryAllCoinService{c: c}
