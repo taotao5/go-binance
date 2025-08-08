@@ -117,3 +117,52 @@ type CreateVipLoanRepayResponse struct {
 	CurrentLTV         string `json:"currentLTV"`
 	RepayStatus        string `json:"repayStatus"`
 }
+
+type QueryVipLoanInterestRateService struct {
+	c         *Client
+	timesTamp int64
+	loanCoin  string
+}
+
+// Asset sets the asset parameter (MANDATORY).
+func (s *QueryVipLoanInterestRateService) TimesTamp(v int64) *QueryVipLoanInterestRateService {
+	s.timesTamp = v
+	return s
+}
+
+func (s *QueryVipLoanInterestRateService) LoanCoin(v string) *QueryVipLoanInterestRateService {
+	s.loanCoin = v
+	return s
+}
+
+// Do sends the request.
+func (s *QueryVipLoanInterestRateService) Do(ctx context.Context) ([]*AssetInterestRate, error) {
+	r := &request{
+		method:   "GET",
+		endpoint: "/sapi/v1/loan/vip/request/interestRate",
+		secType:  secTypeSigned,
+	}
+
+	r.setParam("timestamp", s.timesTamp)
+
+	r.setParam("loanCoin", s.loanCoin)
+
+	data, err := s.c.callAPI(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]*AssetInterestRate, 0)
+	if err := json.Unmarshal(data, &res); err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// 定义 JSON 的结构体
+type AssetInterestRate struct {
+	Asset                      string `json:"asset"`
+	FlexibleDailyInterestRate  string `json:"flexibleDailyInterestRate"`
+	FlexibleYearlyInterestRate string `json:"flexibleYearlyInterestRate"`
+	Time                       string `json:"time"`
+}
