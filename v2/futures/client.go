@@ -3,8 +3,6 @@ package futures
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bitly/go-simplejson"
@@ -202,6 +201,7 @@ func NewClient(apiKey, secretKey string) *Client {
 	return &Client{
 		APIKey:     apiKey,
 		SecretKey:  secretKey,
+		KeyType:    common.KeyTypeEd25519,
 		BaseURL:    getApiEndpoint(),
 		UserAgent:  "Binance/golang",
 		HTTPClient: http.DefaultClient,
@@ -215,6 +215,7 @@ type doFunc func(req *http.Request) (*http.Response, error)
 type Client struct {
 	APIKey     string
 	SecretKey  string
+	KeyType    string
 	BaseURL    string
 	UserAgent  string
 	HTTPClient *http.Client
@@ -248,8 +249,12 @@ func (c *Client) parseRequest(r *request, opts ...RequestOption) (err error) {
 		r.setParam(timestampKey, currentTimestamp()-c.TimeOffset)
 	}
 	queryString := r.query.Encode()
+	// @ is a safe character and does not require escape, So replace it back.
+	queryString = strings.ReplaceAll(queryString, "%40", "@")
 	body := &bytes.Buffer{}
 	bodyString := r.form.Encode()
+	// @ is a safe character and does not require escape, So replace it back.
+	bodyString = strings.ReplaceAll(bodyString, "%40", "@")
 	header := http.Header{}
 	if r.header != nil {
 		header = r.header.Clone()
@@ -262,15 +267,24 @@ func (c *Client) parseRequest(r *request, opts ...RequestOption) (err error) {
 		header.Set("X-MBX-APIKEY", c.APIKey)
 	}
 
+	kt := c.KeyType
+	if kt == "" {
+		kt = common.KeyTypeHmac
+	}
+
+	sf, err := common.SignFunc(kt)
+	if err != nil {
+		return err
+	}
+
 	if r.secType == secTypeSigned {
 		raw := fmt.Sprintf("%s%s", queryString, bodyString)
-		mac := hmac.New(sha256.New, []byte(c.SecretKey))
-		_, err = mac.Write([]byte(raw))
+		sign, err := sf(c.SecretKey, raw)
 		if err != nil {
 			return err
 		}
 		v := url.Values{}
-		v.Set(signatureKey, fmt.Sprintf("%x", (mac.Sum(nil))))
+		v.Set(signatureKey, *sign)
 		if queryString == "" {
 			queryString = v.Encode()
 		} else {

@@ -38,6 +38,8 @@ type Balance struct {
 	CrossUnPnl         string `json:"crossUnPnl"`
 	AvailableBalance   string `json:"availableBalance"`
 	MaxWithdrawAmount  string `json:"maxWithdrawAmount"`
+	MarginAvailable    bool   `json:"marginAvailable"`
+	UpdateTime         int64  `json:"updateTime"`
 }
 
 // GetAccountService get account info
